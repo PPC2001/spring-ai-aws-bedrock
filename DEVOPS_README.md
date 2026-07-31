@@ -82,8 +82,7 @@ All environment configurations are versioned in the `.iac/` directory:
 ├── dev.json                        # Development environment variable matrix
 ├── prod.json                       # Production environment variable matrix
 ├── task-definition-template.json   # ECS Task Definition JSON schema
-├── alb-setup.tf                    # Terraform module for ALB & Security Groups
-└── create-alb-awscli.ps1           # AWS CLI automation script for ALB creation
+└── alb-setup.tf                    # Terraform module for ALB & Security Groups
 ```
 
 ### Resource Specifications Matrix
