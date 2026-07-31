@@ -1,0 +1,118 @@
+name: AWS ECS CI/CD Pipeline
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REPOSITORY: spring-app
+  ECS_CLUSTER: pratik-dev-cluster
+  ECS_SERVICE: springai-app-service-dev
+  CONTAINER_NAME: springai-app
+  IAC_ENV_FILE: .iac/dev.json
+
+jobs:
+  # ----------------------------------------------------
+  # Job 1: Build & Validate Code (Runs on PR & Merge)
+  # ----------------------------------------------------
+  build-and-validate:
+    name: Build & Validate Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 26
+        uses: actions/setup-java@v4
+        with:
+          java-version: '26'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Make mvnw executable
+        run: chmod +x mvnw
+
+      - name: Build with Maven
+        run: ./mvnw clean package -DskipTests
+
+  # ----------------------------------------------------
+  # Job 2: Build Image & Deploy to ECS (Runs on Master Merge)
+  # ----------------------------------------------------
+  deploy-to-ecs:
+    name: Deploy to AWS ECS
+    needs: build-and-validate
+    # Only run deploy step when PR is merged into master branch or triggered manually
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/master') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Tag, and Push Docker Image to ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build container image
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
+          
+          # Push both commit SHA tag and latest tag to ECR
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Render Task Definition Template
+        id: render-task-def
+        env:
+          IMAGE_URI: ${{ steps.build-image.outputs.image }}
+        run: |
+          ACCOUNT_ID=$(jq -r '.aws_account_id' $IAC_ENV_FILE)
+          TASK_FAMILY=$(jq -r '.task_family' $IAC_ENV_FILE)
+          CPU=$(jq -r '.cpu' $IAC_ENV_FILE)
+          MEMORY=$(jq -r '.memory' $IAC_ENV_FILE)
+          CONTAINER_PORT=$(jq -r '.container_port' $IAC_ENV_FILE)
+          
+          sed \
+            -e "s/\${TASK_FAMILY}/$TASK_FAMILY/g" \
+            -e "s/\${CPU}/$CPU/g" \
+            -e "s/\${MEMORY}/$MEMORY/g" \
+            -e "s/\${AWS_ACCOUNT_ID}/$ACCOUNT_ID/g" \
+            -e "s/\${CONTAINER_NAME}/$CONTAINER_NAME/g" \
+            -e "s|\${ECR_IMAGE_URI}|$IMAGE_URI|g" \
+            -e "s/\${CONTAINER_PORT}/$CONTAINER_PORT/g" \
+            -e "s/\${SPRING_PROFILES_ACTIVE}/dev/g" \
+            -e "s/\${AWS_REGION}/$AWS_REGION/g" \
+            -e "s/\${BEDROCK_MODEL_ID}/amazon.nova-lite-v1:0/g" \
+            -e "s/\${BEDROCK_TEMPERATURE}/0.7/g" \
+            -e "s/\${BEDROCK_MAX_TOKENS}/1024/g" \
+            -e "s/\${PORT}/8080/g" \
+            .iac/task-definition-template.json > task-definition.json
+
+      - name: Deploy Amazon ECS Task Definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: task-definition.json
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
