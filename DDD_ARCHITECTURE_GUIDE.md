@@ -1,60 +1,101 @@
 # 🏛️ Domain-Driven Design (DDD) Architecture & Repository Standard
 
-This document establishes the official **Domain-Driven Design (DDD) Naming, Repository Structure, and Infrastructure Alignment Standards** for all microservices in the `ppc-` ecosystem.
+This document establishes the official **Domain-Driven Design (DDD) Naming, Repository Structure, Domain SDK Publishing, and Infrastructure Alignment Standards** for all microservices and libraries in the `ppc-` ecosystem.
 
 ---
 
 ## 📌 1. Repository Naming Standard (`ppc-` Prefix)
 
-As an individual software engineer (`PPC`), all microservice repositories follow a strict, standardized Bounded Context naming convention starting with `ppc-`:
+All microservice repositories follow a strict, standardized Bounded Context naming convention starting with `ppc-`:
 
-$$\text{Format: } \mathbf{ppc\text{-}[domain]\text{-}[bounded-context]\text{-}[api-type/service]}$$
+$$\text{Format: } \mathbf{ppc\text{-}[domain]\text{-}[bounded-context]\text{-}[type]}$$
 
 ```
-Example: ppc-genai-assistant-service
-         │   │     │         │
-         │   │     │         └── Service Type (service, graphql-api, worker, gateway)
-         │   │     └──────────── Bounded Context (assistant)
-         │   └────────────────── Business Domain (genai, commerce, auth, finance)
-         └────────────────────── Personal Organization Prefix (ppc-)
+Example 1 (Deployable Service): ppc-genai-assistant-service
+                                │   │     │         │
+                                │   │     │         └── Service Type (service, graphql-api, worker)
+                                │   │     └──────────── Bounded Context (assistant)
+                                │   └────────────────── Business Domain (genai, commerce, auth, finance)
+                                └────────────────────── Personal Organization Prefix (ppc-)
+
+Example 2 (Packaged SDK / Library): ppc-genai-assistant-sdk
+                                    │   │     │         │
+                                    │   │     │         └── Type (sdk, client, events)
+                                    │   │     └──────────── Bounded Context (assistant)
+                                    │   └────────────────── Business Domain (genai, commerce, auth)
+                                    └────────────────────── Personal Organization Prefix (ppc-)
 ```
 
 ---
 
 ## 🏷️ 2. Repository Naming Matrix by Application Type
 
-### A. GenAI & LLM Applications
-| Application Type | GitHub Repository Name | Description |
-| :--- | :--- | :--- |
-| **GenAI RAG Service** | `ppc-genai-knowledge-service` | Vector search & document retrieval REST API |
-| **GenAI Chat Assistant** | `ppc-genai-assistant-service` | Conversational LLM agent service (Spring AI) |
-| **GenAI Image Engine** | `ppc-genai-vision-service` | Multimodal & image generation service |
-
-### B. REST API Microservices
-| Application Type | GitHub Repository Name | Description |
-| :--- | :--- | :--- |
-| **User Identity** | `ppc-auth-identity-service` | User authentication & JWT issuer REST API |
-| **Order Processing** | `ppc-commerce-order-service` | E-commerce order management REST API |
-| **Payment Gateway** | `ppc-finance-payment-service` | Payment provider integration service |
-
-### C. GraphQL API Microservices
-| Application Type | GitHub Repository Name | Description |
-| :--- | :--- | :--- |
-| **GraphQL Gateway** | `ppc-gateway-graphql-api` | Federated GraphQL unified schema entrypoint |
-| **Customer GraphQL** | `ppc-customer-profile-graphql` | GraphQL query/mutation API for user profiles |
-| **Analytics GraphQL** | `ppc-analytics-metrics-graphql` | Real-time dashboard analytics GraphQL API |
-
-### D. Event-Driven Background Workers
-| Application Type | GitHub Repository Name | Description |
-| :--- | :--- | :--- |
-| **Email Worker** | `ppc-notification-email-worker` | SQS/Kafka consumer for sending emails |
-| **Data Sync Worker** | `ppc-etl-sync-worker` | Batch ingestion and data processing worker |
+### A. Deployable Microservices (Deployed to AWS ECS / Docker)
+| Category | GitHub Repository Name | Description | CI/CD Output |
+| :--- | :--- | :--- | :--- |
+| **GenAI App** | `ppc-genai-assistant-service` | Conversational LLM agent (Spring AI) | Docker Image -> AWS ECR -> ECS |
+| **GenAI RAG** | `ppc-genai-knowledge-service` | Vector search & retrieval service | Docker Image -> AWS ECR -> ECS |
+| **REST API** | `ppc-commerce-order-service` | E-commerce order processing API | Docker Image -> AWS ECR -> ECS |
+| **GraphQL API**| `ppc-gateway-graphql-api` | Federated GraphQL schema gateway | Docker Image -> AWS ECR -> ECS |
+| **Worker** | `ppc-notification-email-worker`| Async SQS queue processor worker | Docker Image -> AWS ECR -> ECS |
 
 ---
 
-## 🏛️ 3. Package Structure Pattern inside Spring Boot (Clean DDD Architecture)
+### B. Packaged Domain SDKs & Client Libraries (Published to Maven Registry, NOT deployed to ECS)
+| Library Type | GitHub Repository Name | Purpose / Contents | CI/CD Output |
+| :--- | :--- | :--- | :--- |
+| **Domain SDK** | `ppc-genai-assistant-sdk` | Java Client SDK, WebClient Feign interfaces, DTOs | `.jar` -> GitHub Packages / CodeArtifact |
+| **Domain SDK** | `ppc-commerce-order-sdk` | Order models, client interfaces, response payloads | `.jar` -> GitHub Packages / CodeArtifact |
+| **Shared Events**| `ppc-common-domain-events` | Shared Domain Event schemas & Kafka/SQS payloads | `.jar` -> GitHub Packages / CodeArtifact |
+| **Core Utilities**| `ppc-common-core-starter` | Shared Spring Boot starter for logging/security | `.jar` -> GitHub Packages / CodeArtifact |
 
-Inside every Spring Boot microservice (REST, GraphQL, or GenAI), Java code follows **Clean Architecture / Hexagonal DDD Layers**:
+---
+
+## 📦 3. Domain SDK & Client Library Architecture Pattern
+
+### Deployable Service vs. Packaged SDK Pattern
+
+```mermaid
+flowchart TD
+    subgraph Deployable Service Repo: ppc-genai-assistant-service
+        App[Spring Boot Application]
+        Controllers[REST / GraphQL Controllers]
+        Engine[LLM Orchestrator Engine]
+    end
+
+    subgraph Packaged SDK Repo: ppc-genai-assistant-sdk
+        SDKClient[GenAiAssistantClient Interface]
+        DTOs[AssistantRequest & AssistantResponse DTOs]
+        Events[AssistantCompletedEvent Payload]
+    end
+
+    subgraph Consumer Microservices
+        OtherService[ppc-commerce-order-service]
+    end
+
+    App -.->|Publishes Maven Artifact| Registry[GitHub Packages / AWS CodeArtifact]
+    SDKClient -.->|Packaged as JAR| Registry
+    Registry -->|pom.xml Dependency| OtherService
+    OtherService -->|Calls via SDK| App
+```
+
+### SDK Key Architectural Guidelines:
+1. **No Spring Boot Executable Plugin**: SDK projects configure `maven-jar-plugin` (standard reusable JAR), **NOT** `spring-boot-maven-plugin` (reusable library, not fat executable jar).
+2. **Lightweight Dependencies**: SDKs contain zero infrastructure overhead (no heavy DB drivers or embedded servers).
+3. **Consumption via Maven `pom.xml`**:
+   ```xml
+   <dependency>
+       <groupId>com.ppc.genai</groupId>
+       <artifactId>ppc-genai-assistant-sdk</artifactId>
+       <version>1.0.0</version>
+   </dependency>
+   ```
+
+---
+
+## 🏛️ 4. Package Structure Pattern inside Spring Boot (Clean DDD Architecture)
+
+Inside every deployable Spring Boot microservice, Java code follows **Clean Architecture / Hexagonal DDD Layers**:
 
 ```
 com.ppc.[domain].[context]/
@@ -80,9 +121,9 @@ com.ppc.[domain].[context]/
 
 ---
 
-## ☁️ 4. AWS Infrastructure Alignment (Shared ALB + Shared ECS Cluster)
+## ☁️ 5. AWS Infrastructure Alignment (Shared ALB + Shared ECS Cluster)
 
-To minimize AWS cloud costs while maintaining enterprise isolation, all `ppc-` repositories deploy into **1 Shared ECS Cluster** and route traffic through **1 Shared Application Load Balancer (ALB)** using Path-Based Listener Rules.
+To minimize AWS cloud costs while maintaining enterprise isolation, all deployable `ppc-` repositories deploy into **1 Shared ECS Cluster** and route traffic through **1 Shared Application Load Balancer (ALB)** using Path-Based Listener Rules.
 
 ```mermaid
 flowchart TD
@@ -114,22 +155,22 @@ flowchart TD
 
 | Component | Naming Rule | Example |
 | :--- | :--- | :--- |
-| **GitHub Repo** | `ppc-<domain>-<context>-<type>` | `ppc-genai-assistant-service` |
+| **Deployable Service Repo** | `ppc-<domain>-<context>-<type>` | `ppc-genai-assistant-service` |
+| **Packaged SDK Repo** | `ppc-<domain>-<context>-sdk` | `ppc-genai-assistant-sdk` |
 | **ECR Registry** | `ppc-<domain>-<context>-<type>` | `.../ppc-genai-assistant-service` |
 | **ECS Task Family**| `ppc-<domain>-<context>-task-<env>` | `ppc-genai-assistant-task-dev` |
 | **ECS Service** | `ppc-<domain>-<context>-service-<env>`| `ppc-genai-assistant-service-dev` |
 | **ALB Target Group**| `ppc-<domain>-<context>-tg-<env>` | `ppc-genai-assistant-tg-dev` |
-| **ALB Path Rule** | `/api/v1/<domain>/*` or `/graphql` | `/api/v1/genai/*` |
 
 ---
 
-## 📋 5. Checklist for Creating a New `ppc-` Microservice
+## 📋 6. Checklist for Creating a New `ppc-` Microservice or SDK
 
-When starting any new repository in your ecosystem:
-
-1. [ ] **Repository Creation**: Name repository using `ppc-[domain]-[context]-[type]`.
+1. [ ] **Repository Type Determination**:
+   - If **Deployable App**: Name `ppc-[domain]-[context]-[service/api/worker]`.
+   - If **Packaged SDK/Library**: Name `ppc-[domain]-[context]-sdk` (Configured for Maven release publishing).
 2. [ ] **Package Declaration**: Use base package `com.ppc.[domain].[context]`.
-3. [ ] **Actuator Readiness**: Include `spring-boot-starter-actuator` and expose `/actuator/health`.
-4. [ ] **Add Infrastructure Config**: Add `.iac/dev.json` and `.iac/task-definition-template.json` targeting `pratik-dev-cluster`.
-5. [ ] **Add CI/CD Workflow**: Add `.github/workflows/deploy-to-ecs.yml` configured with repo name.
-6. [ ] **Register ALB Path Rule**: Add path-based routing rule on `ppc-main-alb-dev` pointing to target group.
+3. [ ] **Actuator Readiness (For Deployable Apps)**: Include `spring-boot-starter-actuator` and expose `/actuator/health`.
+4. [ ] **CI/CD Pipeline Setup**:
+   - For **Services**: `.github/workflows/deploy-to-ecs.yml` (Docker Build -> ECR -> ECS).
+   - For **SDKs**: `.github/workflows/publish-sdk.yml` (Maven Build -> Publish `.jar` to GitHub Packages / AWS CodeArtifact).
