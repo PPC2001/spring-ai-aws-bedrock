@@ -1,0 +1,25 @@
+{
+  "environment": "prod",
+  "aws_account_id": "012751250391",
+  "aws_region": "ap-south-1",
+  "ecr_repository": "spring-app",
+  "ecr_image_uri": "012751250391.dkr.ecr.ap-south-1.amazonaws.com/spring-app:latest",
+  "ecs_cluster_name": "pratik-prod-cluster",
+  "ecs_cluster_arn": "arn:aws:ecs:ap-south-1:012751250391:cluster/pratik-prod-cluster",
+  "ecs_service_name": "springai-app-service-prod",
+  "task_family": "springai-app-task-prod",
+  "container_name": "springai-app",
+  "container_port": 8080,
+  "health_check_path": "/actuator/health",
+  "cpu": "1024",
+  "memory": "2048",
+  "desired_count": 2,
+  "env_variables": {
+    "SPRING_PROFILES_ACTIVE": "prod",
+    "AWS_REGION": "ap-south-1",
+    "BEDROCK_MODEL_ID": "amazon.nova-lite-v1:0",
+    "BEDROCK_TEMPERATURE": "0.7",
+    "BEDROCK_MAX_TOKENS": "1024",
+    "PORT": "8080"
+  }
+}
